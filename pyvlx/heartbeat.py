@@ -49,7 +49,10 @@ class Heartbeat:
             if not self.stopped:
                 PYVLXLOG.debug("Heartbeat not stopped")
                 self.loop_event.clear()
-                await self.pulse()
+                try:
+                    await self.pulse()
+                except PyVLXException as e:
+                    PYVLXLOG.exception("Heartbeat error")
             else:
                 PYVLXLOG.debug("Heartbeat stopped")
         PYVLXLOG.debug("Heartbeat end")
