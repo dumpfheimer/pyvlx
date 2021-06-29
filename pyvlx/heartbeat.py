@@ -3,6 +3,7 @@ import asyncio
 
 from .exception import PyVLXException
 from .get_state import GetState
+from .log import PYVLXLOG
 
 
 class Heartbeat:
@@ -17,6 +18,7 @@ class Heartbeat:
         self.run_task = None
         self.timeout_handle = None
         self.stopped_event = asyncio.Event()
+        PYVLXLOG.debug("Heartbeat created")
 
     def __del__(self):
         """Cleanup heartbeat."""
@@ -26,24 +28,31 @@ class Heartbeat:
         """Create loop task."""
         self.stopped = False
         self.run_task = self.pyvlx.loop.create_task(self.loop())
+        PYVLXLOG.debug("Heartbeat started")
 
     async def stop(self):
         """Stop heartbeat."""
         self.stopped = True
         self.loop_event.set()
+        PYVLXLOG.debug("Heartbeat stopped")
         # Waiting for shutdown of loop()
         await self.stopped_event.wait()
 
     async def loop(self):
         """Pulse every timeout seconds until stopped."""
         while not self.stopped:
+            PYVLXLOG.debug("Heartbeat loop")
             self.timeout_handle = self.pyvlx.connection.loop.call_later(
                 self.timeout_in_seconds, self.loop_timeout
             )
             await self.loop_event.wait()
             if not self.stopped:
+                PYVLXLOG.debug("Heartbeat not stopped")
                 self.loop_event.clear()
                 await self.pulse()
+            else:
+                PYVLXLOG.debug("Heartbeat stopped")
+        PYVLXLOG.debug("Heartbeat end")
         self.cancel_loop_timeout()
         self.stopped_event.set()
 
@@ -59,7 +68,10 @@ class Heartbeat:
 
     async def pulse(self):
         """Send get state request to API to keep the connection alive."""
+        PYVLXLOG.debug("Heartbeat pulse")
         get_state = GetState(pyvlx=self.pyvlx)
         await get_state.do_api_call()
         if not get_state.success:
+            PYVLXLOG.debug("Heartbeat pulse error")
             raise PyVLXException("Unable to send get state.")
+        PYVLXLOG.debug("Heartbeat pulse end")
