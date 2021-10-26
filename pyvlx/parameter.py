@@ -7,7 +7,7 @@ class Parameter:
 
     UNKNOWN_VALUE = 63487  # F7 FF
     CURRENT = 53760  # D2 00
-    DEFAULT = 0xD300  # D2 00
+    DEFAULT = 0xD800  # D3 00
     MAX = 51200  # C8 00
     MIN = 0  # 00 00
     ON = 0  # 00 00
