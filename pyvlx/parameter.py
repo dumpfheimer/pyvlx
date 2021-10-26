@@ -63,6 +63,7 @@ class Parameter:
         if (
                 raw != Position.from_int(Position.CURRENT)
                 and raw != Position.from_int(Position.IGNORE)
+                and raw != Position.from_int(Position.DEFAULT)
                 and raw != Position.from_int(Position.TARGET)
                 and raw != Position.from_int(Position.UNKNOWN_VALUE)
                 and Position.to_int(raw) > Position.MAX
@@ -149,6 +150,11 @@ class Position(Parameter):
     def open(self):
         """Return true if position is set to fully open."""
         return self.raw == self.from_int(Position.MIN)
+
+    @property
+    def default(self):
+        """Return true if position is set to fully open."""
+        return self.raw == self.from_int(Position.DEFAULT)
 
     @property
     def closed(self):
