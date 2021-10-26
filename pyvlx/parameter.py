@@ -64,7 +64,7 @@ class Parameter:
                 and raw != Position.from_int(Position.UNKNOWN_VALUE)
                 and Position.to_int(raw) > Position.MAX
         ):
-            return self.from_int(Position.UNKNOWN_VALUE)
+            return Position.from_int(Position.UNKNOWN_VALUE)
         return raw
 
     def __eq__(self, other):
