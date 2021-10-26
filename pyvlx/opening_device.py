@@ -181,7 +181,7 @@ class Blind(OpeningDevice):
 
         fp3 = Position(position_percent=0)\
             if self.target_position == Position(position_percent=0)\
-            else CurrentPosition()
+            else None
 
         command_send = CommandSend(
             pyvlx=self.pyvlx,
@@ -250,7 +250,7 @@ class Blind(OpeningDevice):
             pyvlx=self.pyvlx,
             wait_for_completion=wait_for_completion,
             node_id=self.node_id,
-            parameter=self.target_position,
+            parameter=CurrentPosition(),
             fp3=fp3,
         )
         await command_send.do_api_call()
