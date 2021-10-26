@@ -166,8 +166,7 @@ class Blind(OpeningDevice):
 
     def get_send_orientation(self):
         if self.target_position == Position(position_percent=0):
-            ret = Position()
-            ret.default()
+            ret = Parameter(Position.DEFAULT)
             return ret
         else:
             return self.target_orientation
