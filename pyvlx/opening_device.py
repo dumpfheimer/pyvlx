@@ -2,7 +2,7 @@
 from .api.command_send import CommandSend
 from .exception import PyVLXException
 from .node import Node
-from .parameter import CurrentPosition, DefaultPosition, Parameter, Position, TargetPosition
+from .parameter import CurrentPosition, Parameter, Position, TargetPosition
 
 
 class OpeningDevice(Node):
