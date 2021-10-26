@@ -184,6 +184,8 @@ class Blind(OpeningDevice):
 
         if self.target_position == Position(position_percent=0):
             kwargs['fp3'] = Position(position_percent=0)
+        else:
+            kwargs['fp3'] = CurrentPosition()
 
         command_send = CommandSend(
             pyvlx=self.pyvlx,
@@ -245,7 +247,7 @@ class Blind(OpeningDevice):
 
         fp3 = Position(position_percent=0)\
             if self.target_position == Position(position_percent=0)\
-            else CurrentPosition()
+            else self.target_orientation
 
         print("Orientation in device: %s " % (orientation))
         command_send = CommandSend(
