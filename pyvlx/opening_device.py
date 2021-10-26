@@ -164,6 +164,12 @@ class Blind(OpeningDevice):
         self.target_orientation = TargetPosition()
         self.target_position = TargetPosition()
 
+    def get_send_orientation(self):
+        if self.target_position == Position.from_int(0):
+            return TargetPosition.from_int(0xD300)
+        else:
+            return self.target_orientation
+
     async def set_position(self, position, wait_for_completion=True):
         """Set window to desired position.
 
@@ -184,7 +190,7 @@ class Blind(OpeningDevice):
             wait_for_completion=wait_for_completion,
             node_id=self.node_id,
             parameter=position,
-            fp3=self.target_orientation,
+            fp3=self.get_send_orientation(),
         )
         await command_send.do_api_call()
         if not command_send.success:
@@ -242,7 +248,7 @@ class Blind(OpeningDevice):
             wait_for_completion=wait_for_completion,
             node_id=self.node_id,
             parameter=self.target_position,
-            fp3=orientation,
+            fp3=self.get_send_orientation(),
         )
         await command_send.do_api_call()
         if not command_send.success:
