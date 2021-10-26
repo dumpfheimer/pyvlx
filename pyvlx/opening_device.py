@@ -164,7 +164,7 @@ class Blind(OpeningDevice):
         self.target_orientation = TargetPosition()
         self.target_position = TargetPosition()
 
-    async def set_position(self, position, wait_for_completion=True):
+    async def set_position(self, position, wait_for_completion=True, orientation=None):
         """Set window to desired position.
 
         Parameters:
@@ -182,7 +182,9 @@ class Blind(OpeningDevice):
 
         kwargs = dict()
 
-        if self.target_position == Position(position_percent=0):
+        if orientation is not None:
+            kwargs['fp3'] = orientation
+        elif self.target_position == Position(position_percent=0):
             kwargs['fp3'] = Position(position_percent=0)
         else:
             kwargs['fp3'] = CurrentPosition()
@@ -227,7 +229,7 @@ class Blind(OpeningDevice):
     async def stop(self, wait_for_completion=True):
         """Stop Blind position."""
         await self.set_position(
-            position=CurrentPosition(), wait_for_completion=wait_for_completion
+            position=CurrentPosition(), wait_for_completion=wait_for_completion, orientation=self.target_orientation
         )
 
     async def set_orientation(self, orientation, wait_for_completion=True):
