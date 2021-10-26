@@ -2,7 +2,7 @@
 from .api.command_send import CommandSend
 from .exception import PyVLXException
 from .node import Node
-from .parameter import CurrentPosition, Parameter, Position, TargetPosition
+from .parameter import CurrentPosition, Parameter, Position, TargetPosition, IgnorePosition
 
 
 class OpeningDevice(Node):
@@ -179,7 +179,6 @@ class Blind(OpeningDevice):
         self.target_position = position
         self.position = position
 
-
         kwargs = dict()
 
         if orientation is not None:
@@ -187,7 +186,7 @@ class Blind(OpeningDevice):
         elif self.target_position == Position(position_percent=0):
             kwargs['fp3'] = Position(position_percent=0)
         else:
-            kwargs['fp3'] = CurrentPosition()
+            kwargs['fp3'] = IgnorePosition()
 
         command_send = CommandSend(
             pyvlx=self.pyvlx,
@@ -201,7 +200,7 @@ class Blind(OpeningDevice):
             raise PyVLXException("Unable to send command")
         await self.after_update()
 
-    async def open(self, wait_for_completion=True):
+    async def open(self, wait_for_completion=TCurrentPositionzrue):
         """Open window.
 
         Parameters:
@@ -256,7 +255,7 @@ class Blind(OpeningDevice):
             pyvlx=self.pyvlx,
             wait_for_completion=wait_for_completion,
             node_id=self.node_id,
-            parameter=CurrentPosition(),
+            parameter=IgnorePosition(),
             fp3=fp3,
         )
         await command_send.do_api_call()
