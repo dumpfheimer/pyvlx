@@ -222,6 +222,14 @@ class UnknownPosition(Position):
         super().__init__(position=Position.UNKNOWN_VALUE)
 
 
+class DefaultPosition(Position):
+    """Current position, used to stop devices."""
+
+    def __init__(self):
+        """Initialize CurrentPosition class."""
+        super().__init__(position=Position.DEFAULT)
+
+
 class CurrentPosition(Position):
     """Current position, used to stop devices."""
 

@@ -2,7 +2,7 @@
 from .api.command_send import CommandSend
 from .exception import PyVLXException
 from .node import Node
-from .parameter import CurrentPosition, Parameter, Position, TargetPosition
+from .parameter import CurrentPosition, DefaultPosition, Parameter, Position, TargetPosition
 
 
 class OpeningDevice(Node):
@@ -166,8 +166,7 @@ class Blind(OpeningDevice):
 
     def get_send_orientation(self):
         if self.target_position == Position(position_percent=0):
-            ret = Parameter(Parameter.from_int(Position.DEFAULT))
-            return ret
+            return DefaultPosition()
         else:
             return self.target_orientation
 
