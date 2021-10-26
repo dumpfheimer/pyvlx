@@ -5,15 +5,14 @@ from .exception import PyVLXException
 class Parameter:
     """General object for storing parameters."""
 
-    UNKNOWN_VALUE = 63487  # F7 FF
-    CURRENT = 53760  # D2 00
-    DEFAULT = 0xD800  # D3 00
-    MAX = 51200  # C8 00
-    MIN = 0  # 00 00
-    ON = 0  # 00 00
-    OFF = 51200  # C8 00
-    TARGET = 53504  # D1 00
-    IGNORE = 54272  # D4 00
+    UNKNOWN_VALUE = 0xF7FF  # F7 FF
+    CURRENT = 0xD200  # D2 00
+    MAX = 0xC800  # C8 00
+    MIN = 0x0000  # 00 00
+    ON = 0x0000  # 00 00
+    OFF = 0xC800  # C8 00
+    TARGET = 0xD100  # D1 00
+    IGNORE = 0xD400  # D4 00
 
     def __init__(self, raw=None):
         """Initialize Parameter class."""
@@ -47,8 +46,6 @@ class Parameter:
             return True
         if value == Parameter.CURRENT:
             return True
-        if value == Parameter.DEFAULT:
-            return True
         if value == Parameter.TARGET:
             return True
         return False
@@ -63,7 +60,6 @@ class Parameter:
         if (
                 raw != Position.from_int(Position.CURRENT)
                 and raw != Position.from_int(Position.IGNORE)
-                and raw != Position.from_int(Position.DEFAULT)
                 and raw != Position.from_int(Position.TARGET)
                 and raw != Position.from_int(Position.UNKNOWN_VALUE)
                 and Position.to_int(raw) > Position.MAX
@@ -152,11 +148,6 @@ class Position(Parameter):
         return self.raw == self.from_int(Position.MIN)
 
     @property
-    def default(self):
-        """Return true if position is set to fully open."""
-        return self.raw == self.from_int(Position.DEFAULT)
-
-    @property
     def closed(self):
         """Return true if position is set to fully closed."""
         # Consider closed even if raw is not exactly 51200 (tolerance for devices like Velux SML)
@@ -203,7 +194,7 @@ class Position(Parameter):
     def to_percent(raw):
         """Create percent position value out of raw."""
         # The first byte has the vlue from 0 to 200. Ignoring the second one.
-        # Adding 0.5 allows a slight tolerance for devices (e.g. Velux SML) that 
+        # Adding 0.5 allows a slight tolerance for devices (e.g. Velux SML) that
         # do not return exactly 51200 as final position when closed.
         return int(raw[0] / 2 + 0.5)
 
@@ -220,14 +211,6 @@ class UnknownPosition(Position):
     def __init__(self):
         """Initialize UnknownPosition class."""
         super().__init__(position=Position.UNKNOWN_VALUE)
-
-
-class DefaultPosition(Position):
-    """Current position, used to stop devices."""
-
-    def __init__(self):
-        """Initialize CurrentPosition class."""
-        super().__init__(position=Position.DEFAULT)
 
 
 class CurrentPosition(Position):

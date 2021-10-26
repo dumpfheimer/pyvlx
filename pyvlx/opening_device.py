@@ -164,12 +164,6 @@ class Blind(OpeningDevice):
         self.target_orientation = TargetPosition()
         self.target_position = TargetPosition()
 
-    def get_send_orientation(self):
-        if self.target_position == Position(position_percent=0):
-            return DefaultPosition()
-        else:
-            return self.target_orientation
-
     async def set_position(self, position, wait_for_completion=True):
         """Set window to desired position.
 
@@ -185,12 +179,16 @@ class Blind(OpeningDevice):
         self.target_position = position
         self.position = position
 
+        fp3 = Position(position_percent=0)\
+            if self.target_position == Position(position_percent=0)\
+            else CurrentPosition()
+
         command_send = CommandSend(
             pyvlx=self.pyvlx,
             wait_for_completion=wait_for_completion,
             node_id=self.node_id,
             parameter=position,
-            fp3=self.get_send_orientation(),
+            fp3=fp3,
         )
         await command_send.do_api_call()
         if not command_send.success:
@@ -242,13 +240,18 @@ class Blind(OpeningDevice):
         """
         self.target_orientation = orientation
         self.orientation = orientation
+
+        fp3 = Position(position_percent=0)\
+            if self.target_position == Position(position_percent=0)\
+            else CurrentPosition()
+
         print("Orientation in device: %s " % (orientation))
         command_send = CommandSend(
             pyvlx=self.pyvlx,
             wait_for_completion=wait_for_completion,
             node_id=self.node_id,
             parameter=self.target_position,
-            fp3=self.get_send_orientation(),
+            fp3=fp3,
         )
         await command_send.do_api_call()
         if not command_send.success:
