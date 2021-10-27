@@ -1,7 +1,7 @@
 PyVLX - controling VELUX windows with Python
 ============================================
 
-[![Build Status](https://travis-ci.org/Julius2342/pyvlx.svg?branch=master)](https://travis-ci.org/Julius2342/pyvlx)
+[![CI](https://github.com/Julius2342/pyvlx/actions/workflows/ci.yml/badge.svg)](https://github.com/Julius2342/pyvlx/actions/workflows/ci.yml)
 
 PyVLX uses the Velux KLF 200 interface to control io-Homecontrol devices, e.g. Velux Windows.
 
@@ -63,13 +63,18 @@ async def main(loop):
     await pyvlx.nodes['Bath'].close()
     await pyvlx.nodes['Bath'].set_position(Position(position_percent=45))
 
+    # Read limits of windows
+    # limit = await pyvlx.nodes['Bath'].get_limitation()
+    # limit.min_value
+    # limit.max_value
+    
     # Changing of on-off switches:
     # await pyvlx.nodes['CoffeeMaker'].set_on()
     # await pyvlx.nodes['CoffeeMaker'].set_off()
 
     # You can easily rename nodes:
     # await pyvlx.nodes["Window 10"].rename("Window 11")
-
+        
     await pyvlx.disconnect()
 
 if __name__ == '__main__':
