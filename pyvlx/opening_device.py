@@ -1,4 +1,4 @@
-"""Module for window openers."""
+"""Module for Opening devices."""
 import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -6,7 +6,6 @@ from .api.command_send import CommandSend
 from .api.get_limitation import GetLimitation
 from .const import Velocity
 from .exception import PyVLXException
-from .log import PYVLXLOG
 from .node import Node
 from .parameter import (
     CurrentPosition, DualRollerShutterPosition, IgnorePosition, Parameter,
@@ -41,14 +40,14 @@ class OpeningDevice(Node):
         super().__init__(
             pyvlx=pyvlx, node_id=node_id, name=name, serial_number=serial_number
         )
-        self.position = Position(parameter=position_parameter)
-        self.target = Position(parameter=position_parameter)
-        self.is_opening = False
-        self.is_closing = False
+        self.position: Position = Position(parameter=position_parameter)
+        self.target: Position = Position(parameter=position_parameter)
+        self.is_opening: bool = False
+        self.is_closing: bool = False
         self.state_received_at: Optional[datetime.datetime] = None
         self.estimated_completion: Optional[datetime.datetime] = None
-        self.use_default_velocity = False
-        self.default_velocity = Velocity.DEFAULT
+        self.use_default_velocity: bool = False
+        self.default_velocity: Velocity = Velocity.DEFAULT
         self.open_position_target: int = 0
         self.close_position_target: int = 100
 
@@ -58,7 +57,7 @@ class OpeningDevice(Node):
         velocity: Velocity | int | None = Velocity.DEFAULT,
         wait_for_completion: bool = True,
     ) -> None:
-        """Set window to desired position.
+        """Set opening device to desired position.
 
         Parameters:
             * position: Position object containing the target position.
@@ -98,7 +97,7 @@ class OpeningDevice(Node):
         velocity: Velocity | int | None = Velocity.DEFAULT,
         wait_for_completion: bool = True,
     ) -> None:
-        """Open window.
+        """Open opening device.
 
         Parameters:
             * velocity: Velocity to be used during transition.
@@ -117,7 +116,7 @@ class OpeningDevice(Node):
         velocity: Velocity | int | None = Velocity.DEFAULT,
         wait_for_completion: bool = True,
     ) -> None:
-        """Close window.
+        """Close opening device.
 
         Parameters:
             * velocity: Velocity to be used during transition.
@@ -132,7 +131,7 @@ class OpeningDevice(Node):
         )
 
     async def stop(self, wait_for_completion: bool = True) -> None:
-        """Stop window.
+        """Stop opening device.
 
         Parameters:
             * wait_for_completion: If set, function will return
@@ -156,32 +155,27 @@ class OpeningDevice(Node):
         ):
             return 100
 
-        movement_duration_s = (
+        movement_duration_s: float = (
             self.estimated_completion - self.state_received_at
         ).total_seconds()
-        time_passed_s = (
+        time_passed_s: float = (
             datetime.datetime.now() - self.state_received_at
         ).total_seconds()
 
-        percent = int(time_passed_s / movement_duration_s * 100)
+        percent: int = int(time_passed_s / movement_duration_s * 100)
         percent = max(percent, 0)
         percent = min(percent, 100)
         return percent
 
     def get_position(self) -> Position:
         """Return position of the cover."""
-        PYVLXLOG.debug("get_position")
         if self.is_moving():
-            PYVLXLOG.debug("get_position: is moving")
             percent = self.movement_percent()
-            PYVLXLOG.debug("get_position: %d percent", percent)
             movement_origin = self.position.position_percent
             movement_target = self.target.position_percent
-            PYVLXLOG.debug("get_position: %s => %s", movement_origin, movement_target)
             current_position = (
                 movement_origin + (movement_target - movement_origin) / 100 * percent
             )
-            PYVLXLOG.debug("get_position: current_position=%d", int(current_position))
             return Position(position_percent=int(current_position))
         return self.position
 
@@ -277,9 +271,9 @@ class Blind(OpeningDevice):
             serial_number=serial_number,
             position_parameter=position_parameter,
         )
-        self.orientation = Position(position_percent=0)
-        self.target_orientation = Position()
-        self.target_position = Position()
+        self.orientation: Position = Position(position_percent=0)
+        self.target_orientation: Position = Position()
+        self.target_position: Position = Position()
         self.open_orientation_target: int = 50
         self.close_orientation_target: int = 100
 
@@ -498,10 +492,10 @@ class DualRollerShutter(OpeningDevice):
             serial_number=serial_number,
             position_parameter=position_parameter,
         )
-        self.position_upper_curtain = Position(position_percent=0)
-        self.position_lower_curtain = Position(position_percent=0)
+        self.position_upper_curtain: Position = Position(position_percent=0)
+        self.position_lower_curtain: Position = Position(position_percent=0)
         self.target_position: Any = Position()
-        self.active_parameter = 0
+        self.active_parameter: int = 0
 
     async def set_position(
         self,
@@ -510,7 +504,7 @@ class DualRollerShutter(OpeningDevice):
         wait_for_completion: bool = True,
         curtain: str = "dual",
     ) -> None:
-        """Set window to desired position.
+        """Set DualRollerShutter to desired position.
 
         Parameters:
             * position: Position object containing the current position.
@@ -573,7 +567,7 @@ class DualRollerShutter(OpeningDevice):
         wait_for_completion: bool = True,
         curtain: str = "dual",
     ) -> None:
-        """Open window.
+        """Open DualRollerShutter.
 
         Parameters:
             * wait_for_completion: If set, function will return
@@ -593,7 +587,7 @@ class DualRollerShutter(OpeningDevice):
         wait_for_completion: bool = True,
         curtain: str = "dual",
     ) -> None:
-        """Close window.
+        """Close DualRollerShutter.
 
         Parameters:
             * wait_for_completion: If set, function will return
