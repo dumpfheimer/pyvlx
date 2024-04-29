@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, List, Optional
 
 from .api import SetNodeName
 from .exception import PyVLXException
+from .log import PYVLXLOG
 
 if TYPE_CHECKING:
     from pyvlx import PyVLX
@@ -37,6 +38,7 @@ class Node:
 
     async def after_update(self) -> None:
         """Execute callbacks after internal state has been changed."""
+        PYVLXLOG.debug("Node %r after update. Calling %d update listeners", self.node_id, len(self.device_updated_cbs))
         for device_updated_cb in self.device_updated_cbs:
             # pylint: disable=not-callable
             self.pyvlx.loop.create_task(device_updated_cb(self))  # type: ignore

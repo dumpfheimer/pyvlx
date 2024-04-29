@@ -75,7 +75,7 @@ class PyVLX:
 
         PYVLXLOG.debug("Connecting to KLF 200 was opened")
         for node in self.nodes:
-            await self.loop.create_task(node.after_update())
+            await node.after_update()
 
     async def reboot_gateway(self) -> None:
         """For Compatibility: Reboot the KLF 200."""
@@ -126,4 +126,4 @@ class PyVLX:
         """Handle KLF 200 closed connection callback."""
         PYVLXLOG.debug("Connecting to KLF 200 was closed")
         for node in self.nodes:
-            await self.loop.create_task(node.after_update())
+            await node.after_update()
