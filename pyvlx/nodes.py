@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Iterator, List, Optional, Union
 
 from .api import GetAllNodesInformation, GetNodeInformation
 from .exception import PyVLXException
+from .log import PYVLXLOG
 from .node import Node
 from .node_helper import convert_frame_to_node
 
@@ -82,9 +83,16 @@ class Nodes:
         notification_frame = get_node_information.notification_frame
         if notification_frame is None:
             return
-        node = convert_frame_to_node(self.pyvlx, notification_frame)
-        if node is not None:
-            self.add(node)
+        node: Node | None = None
+        for n in self.__nodes:
+            if n.node_id == node_id:
+                node = n
+                PYVLXLOG.debug("Loaded node %s from existing nodes", n.node_id)
+        if node is None:
+            node = convert_frame_to_node(self.pyvlx, notification_frame)
+            if node is not None:
+                PYVLXLOG.debug("Created new node %s", node.node_id)
+                self.add(node)
 
     async def _load_all_nodes(self) -> None:
         """Load all nodes via API."""
