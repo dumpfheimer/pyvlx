@@ -37,7 +37,6 @@ class PyVLX:
         self.loop = loop or asyncio.get_event_loop()
         self.config = Config(self, path, host, password)
         self.connection = Connection(loop=self.loop, config=self.config)
-        self.connection.register_connection_closed_cb(self.on_connection_closed_cb)
         self.heartbeat = Heartbeat(
             pyvlx=self,
             interval=heartbeat_interval,
@@ -46,12 +45,13 @@ class PyVLX:
         self.node_updater = NodeUpdater(pyvlx=self)
         self.nodes = Nodes(self)
         self.connection.register_frame_received_cb(self.node_updater.process_frame)
+
         self.scenes = Scenes(self)
         self.version = None
         self.protocol_version = None
         self.klf200 = Klf200Gateway(pyvlx=self)
         self.api_call_semaphore = asyncio.Semaphore(1)  # Limit parallel commands
-        PYVLXLOG.debug("Loadig pyvlx v0.2.23")
+        PYVLXLOG.debug("Loadig pyvlx v0.2.24")
 
     async def connect(self) -> None:
         """Connect to KLF 200."""
@@ -101,15 +101,18 @@ class PyVLX:
 
     async def disconnect(self) -> None:
         """Disconnect from KLF 200."""
-        # If the connection will be closed while house status monitor is enabled, a reconnection will fail on SSL handshake.
-        try:
-            await self.klf200.house_status_monitor_disable(pyvlx=self, timeout=1)
-        except (OSError, PyVLXException):
-            pass
         await self.heartbeat.stop()
-        # Reboot KLF200 when disconnecting to avoid unresponsive KLF200.
-        await self.klf200.reboot()
-        self.connection.disconnect()
+        if self.connection.connected:
+            try:
+                # If the connection will be closed while house status monitor is enabled, a reconnection will fail on SSL handshake.
+                await self.klf200.house_status_monitor_disable(pyvlx=self, timeout=1)
+                # Reboot KLF200 when disconnecting to avoid unresponsive KLF200.
+                await self.klf200.reboot()
+            except (OSError, PyVLXException):
+                pass
+            self.connection.disconnect()
+        if self.connection.tasks:
+            await asyncio.gather(*self.connection.tasks)
 
     async def load_nodes(self, node_id: Optional[int] = None) -> None:
         """Load devices from KLF 200, if no node_id is specified all nodes are loaded."""

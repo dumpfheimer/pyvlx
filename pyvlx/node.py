@@ -27,6 +27,8 @@ class Node:
         self.name = name
         self.serial_number = serial_number
         self.device_updated_cbs: List[CallbackType] = []
+        self.pyvlx.connection.register_connection_opened_cb(self.after_update)
+        self.pyvlx.connection.register_connection_closed_cb(self.after_update)
 
     def register_device_updated_cb(self, device_updated_cb: CallbackType) -> None:
         """Register device updated callback."""
@@ -41,7 +43,7 @@ class Node:
         PYVLXLOG.debug("Node %r after update. Calling %d update listeners", self.node_id, len(self.device_updated_cbs))
         for device_updated_cb in self.device_updated_cbs:
             # pylint: disable=not-callable
-            self.pyvlx.loop.create_task(device_updated_cb(self))  # type: ignore
+            await self.pyvlx.loop.create_task(device_updated_cb(self))  # type: ignore
 
     async def rename(self, name: str) -> None:
         """Change name of node."""
