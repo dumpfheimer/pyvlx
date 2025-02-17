@@ -36,7 +36,7 @@ class Node:
 
     def unregister_device_updated_cb(self, device_updated_cb: CallbackType) -> None:
         """Unregister device updated callback."""
-        if device_update_cb in self.device_updated_cbs:
+        if device_updated_cb in self.device_updated_cbs:
             self.device_updated_cbs.remove(device_updated_cb)
 
     async def after_update(self) -> None:
