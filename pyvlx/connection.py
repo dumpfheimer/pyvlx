@@ -78,6 +78,9 @@ CallbackType = Callable[[FrameBase], Coroutine]
 class Connection:
     """Class for handling TCP connection."""
 
+    # Timeout for TCP connect + SSL handshake in seconds
+    CONNECTION_TIMEOUT = 10
+
     def __init__(self, loop: asyncio.AbstractEventLoop, config: Config):
         """Init TCP connection."""
         self.loop = loop
@@ -102,19 +105,24 @@ class Connection:
         self.connected = False
         PYVLXLOG.debug("TCP transport closed.")
         for connection_closed_cb in self.connection_closed_cbs:
-            if asyncio.iscoroutine(connection_closed_cb()):
-                task = self.loop.create_task(connection_closed_cb())
+            # Call the callback once and schedule it if it returns a coroutine
+            result = connection_closed_cb()
+            if asyncio.iscoroutine(result):
+                task = self.loop.create_task(result)
                 self.tasks.append(task)
 
     async def connect(self) -> None:
         """Connect to gateway via SSL."""
         tcp_client = TCPTransport(self.frame_received_cb, connection_lost_cb=self.on_connection_lost)
         assert self.config.host is not None
-        self.transport, _ = await self.loop.create_connection(
-            lambda: tcp_client,
-            host=self.config.host,
-            port=self.config.port,
-            ssl=self.create_ssl_context(),
+        self.transport, _ = await asyncio.wait_for(
+            self.loop.create_connection(
+                lambda: tcp_client,
+                host=self.config.host,
+                port=self.config.port,
+                ssl=self.create_ssl_context(),
+            ),
+            timeout=self.CONNECTION_TIMEOUT,
         )
         self.connected = True
         self.connection_counter += 1
@@ -122,8 +130,10 @@ class Connection:
             "Amount of connections since last HA start: %s", self.connection_counter
         )
         for connection_opened_cb in self.connection_opened_cbs:
-            if asyncio.iscoroutine(connection_opened_cb()):
-                task = self.loop.create_task(connection_opened_cb())
+            # Call the callback once and schedule it if it returns a coroutine
+            result = connection_opened_cb()
+            if asyncio.iscoroutine(result):
+                task = self.loop.create_task(result)
                 self.tasks.append(task)
 
     def register_frame_received_cb(self, callback: CallbackType) -> None:
