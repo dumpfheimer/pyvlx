@@ -2,19 +2,16 @@
 import asyncio
 import logging
 
-from pyvlx import PYVLXLOG, PyVLX
+from pyvlx import PyVLX
 
 
-async def main(loop):
+async def main() -> None:
     """Log packets from Bus."""
     # Setting debug
-    PYVLXLOG.setLevel(logging.DEBUG)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(logging.DEBUG)
-    PYVLXLOG.addHandler(stream_handler)
+    logging.basicConfig(level=logging.DEBUG)
 
     # Connecting to KLF 200
-    pyvlx = PyVLX('pyvlx.yaml', loop=loop)
+    pyvlx = PyVLX('pyvlx.yaml')
     await pyvlx.load_scenes()
     await pyvlx.load_nodes()
 
@@ -27,7 +24,4 @@ async def main(loop):
 
 
 if __name__ == '__main__':
-    # pylint: disable=invalid-name
-    LOOP = asyncio.get_event_loop()
-    LOOP.run_until_complete(main(LOOP))
-    LOOP.close()
+    asyncio.run(main())

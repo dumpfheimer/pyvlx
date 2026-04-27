@@ -3,11 +3,15 @@ all:
 	@echo
 	@echo "Available targets"
 	@echo ""
-	@echo "build           -- build python package"
-	@echo ""
-	@echo "pypi            -- upload package to pypi"
+	@echo "ci              -- run linting and tests"
 	@echo ""
 	@echo "test            -- execute test suite"
+	@echo ""
+	@echo "flake8          -- run flake8 checks"
+	@echo ""
+	@echo "isort           -- run isort checks"
+	@echo ""
+	@echo "mypy            -- run mypy checks"
 	@echo ""
 	@echo "pylint          -- run pylint tests"
 	@echo ""
@@ -15,28 +19,40 @@ all:
 	@echo ""
 	@echo "coverage        -- create coverage report"
 	@echo ""
+	@echo "build           -- build python package"
+	@echo ""
+	@echo "pypi            -- upload package to pypi"
+	@echo ""
 
 test:
-	PYTHONPATH="${PYTHONPATH}:/" python3 -m unittest discover -s test -p "*_test.py" -b
+	pytest
+
+ci: pydocstyle flake8 pylint isort mypy test
+
+flake8:
+	@flake8
+
+isort:
+	@isort --check-only test examples src/pyvlx
+
+mypy:
+	@mypy src/pyvlx
 
 build:
-	@python3 setup.py sdist
-	@python3 setup.py egg_info
+	@python3 -m build
 
 pypi:
-	# python3 setup.py register -r pypi
-	#@python3 setup.py sdist upload -r pypi
 	@rm -f dist/*
-	@python setup.py sdist
+	@python3 -m build
 	@twine upload dist/*
 
 pylint:
-	@pylint --rcfile=.pylintrc pyvlx test/*.py *.py examples/*.py
+	@pylint src/pyvlx test/*.py examples/*.py
 
 pydocstyle:
-	 @pydocstyle pyvlx test/*.py test/*.py *.py examples/*.py
+	 @pydocstyle src/pyvlx test/*.py test/*.py examples/*.py
 
 coverage:
-	py.test --cov-report html --cov pyvlx --verbose
+	pytest --cov --cov-report html --verbose
 
 .PHONY: test build

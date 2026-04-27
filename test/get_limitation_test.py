@@ -1,10 +1,6 @@
 """Unit test for limitation."""
-import asyncio
 import unittest
 from unittest.mock import MagicMock
-
-import pytest
-from pytest import FixtureRequest
 
 from pyvlx import PyVLX
 from pyvlx.api.frames.frame_get_limitation import (
@@ -14,17 +10,7 @@ from pyvlx.api.get_limitation import GetLimitation
 from pyvlx.const import LimitationType, Originator
 
 
-@pytest.fixture(scope="class")
-def event_loop_instance(request: FixtureRequest) -> None:
-    """Add the event_loop as an attribute to the unittest style test class."""
-    request.cls.event_loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield
-    request.cls.event_loop.close()
-
-
-# pylint: disable=too-many-public-methods,invalid-name
-@pytest.mark.usefixtures("event_loop_instance")
-class TestGetLimitation(unittest.TestCase):
+class TestGetLimitation(unittest.IsolatedAsyncioTestCase):
     """Test class for Limitation."""
 
     def setUp(self) -> None:
@@ -43,41 +29,41 @@ class TestGetLimitation(unittest.TestCase):
     def test_max_value(self) -> None:
         """Test limit.max_value."""
         limit = GetLimitation(self.pyvlx, 1)
-        limit.max_value_raw = b'\xf7'
+        limit.max_value_raw = b'\xf7\xff'
         self.assertEqual(limit.max_value, 124)
 
     def test_min_value(self) -> None:
         """Test limit.min_value."""
         limit = GetLimitation(self.pyvlx, 1)
-        limit.min_value_raw = b'\xba'
+        limit.min_value_raw = b'\xba\x34'
         self.assertEqual(limit.min_value, 93)
 
-    def test_handle_frame(self) -> None:
+    async def test_handle_frame(self) -> None:
         """Test handle frame."""
         limit = GetLimitation(self.pyvlx, 1)
 
         frame = FrameGetLimitationStatus()
-        self.assertFalse(self.event_loop.run_until_complete(limit.handle_frame(frame)))
+        self.assertFalse(await limit.handle_frame(frame))
         self.assertFalse(limit.success)
 
         frame = FrameGetLimitationStatusConfirmation()
-        self.assertFalse(self.event_loop.run_until_complete(limit.handle_frame(frame)))
+        self.assertFalse(await limit.handle_frame(frame))
         self.assertFalse(limit.success)
 
         frame = FrameGetLimitationStatusNotification()
         frame.session_id = 1
         frame.node_id = 1
-        frame.min_value = b'\xf7'
-        frame.max_value = b'\xba'
+        frame.min_value = b'\xf7\xff'
+        frame.max_value = b'\xba\x34'
         frame.limit_originator = Originator.USER
         frame.limit_time = 1
 
         limit.session_id = 0
-        self.assertFalse(self.event_loop.run_until_complete(limit.handle_frame(frame)))
+        self.assertFalse(await limit.handle_frame(frame))
         self.assertFalse(limit.success)  # Session id is wrong
 
         limit.session_id = frame.session_id
-        self.assertTrue(self.event_loop.run_until_complete(limit.handle_frame(frame)))
+        self.assertTrue(await limit.handle_frame(frame))
         self.assertTrue(limit.success)
         self.assertEqual(limit.node_id, frame.node_id)
         self.assertEqual(limit.session_id, frame.session_id)
@@ -91,11 +77,13 @@ class TestGetLimitation(unittest.TestCase):
         limit = GetLimitation(self.pyvlx, 1)
         req_frame = limit.request_frame()
         self.assertIsInstance(req_frame, FrameGetLimitationStatus)
-        self.assertTrue(req_frame.session_id, 1)
-        self.assertTrue(req_frame.node_ids, [1])
-        self.assertTrue(req_frame.limitations_type, limit.limitation_type)
+        self.assertEqual(req_frame.session_id, 1)
+        self.assertEqual(req_frame.node_ids, [1])
+        self.assertEqual(req_frame.limitation_type, limit.limitation_type)
 
         limit.limitation_type = LimitationType.MAX_LIMITATION
+        req_frame = limit.request_frame()
         self.assertIsInstance(req_frame, FrameGetLimitationStatus)
-        self.assertTrue(req_frame.session_id, 1)
-        self.assertTrue(req_frame.limitations_type, limit.limitation_type)
+        self.assertEqual(req_frame.session_id, 2)
+        self.assertEqual(req_frame.node_ids, [1])
+        self.assertEqual(req_frame.limitation_type, limit.limitation_type)

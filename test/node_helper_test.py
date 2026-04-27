@@ -3,17 +3,17 @@ import unittest
 from unittest.mock import MagicMock
 
 from pyvlx import (
-    Blade, Blind, GarageDoor, Gate, Light, PyVLX, RollerShutter, Window)
+    Blade, Blind, GarageDoor, Gate, Light, OnOffLight, PyVLX, RollerShutter,
+    Window)
 from pyvlx.api.frames import FrameGetNodeInformationNotification
 from pyvlx.connection import Connection
 from pyvlx.const import NodeTypeWithSubtype
+from pyvlx.dimmable_device import ExteriorHeating
 from pyvlx.node_helper import convert_frame_to_node
 
 
 class TestNodeHelper(unittest.TestCase):
     """Test class for helper functions of node_helper."""
-
-    # pylint: disable=too-many-public-methods,invalid-name
 
     def setUp(self) -> None:
         """Set up TestNodeHelper."""
@@ -117,7 +117,7 @@ class TestNodeHelper(unittest.TestCase):
         frame = FrameGetNodeInformationNotification()
         frame.node_id = 23
         frame.name = "Fnord23"
-        frame.node_type = NodeTypeWithSubtype.LINAR_ANGULAR_POSITION_OF_GARAGE_DOOR
+        frame.node_type = NodeTypeWithSubtype.LINEAR_ANGULAR_POSITION_OF_GARAGE_DOOR
         frame.serial_number = "aa:bb:aa:bb:aa:bb:aa:23"
         node = convert_frame_to_node(self.pyvlx, frame)
         self.assertEqual(
@@ -193,6 +193,15 @@ class TestNodeHelper(unittest.TestCase):
         frame.serial_number = "aa:bb:aa:bb:aa:bb:aa:23"
         self.assertEqual(convert_frame_to_node(self.pyvlx, frame), None)
 
+    def test_unknown_node_type(self) -> None:
+        """Test convert_frame_to_node with an unknown node type value."""
+        frame = FrameGetNodeInformationNotification()
+        frame.node_id = 23
+        frame.name = "Fnord23"
+        frame.node_type = 99999  # unknown node type value (not in NodeTypeWithSubtype)
+        frame.serial_number = "aa:bb:aa:bb:aa:bb:aa:23"
+        self.assertEqual(convert_frame_to_node(self.pyvlx, frame), None)
+
     def test_light(self) -> None:
         """Test convert_frame_to_node with light."""
         frame = FrameGetNodeInformationNotification()
@@ -221,7 +230,25 @@ class TestNodeHelper(unittest.TestCase):
         node = convert_frame_to_node(self.pyvlx, frame)
         self.assertEqual(
             node,
-            Light(
+            OnOffLight(
+                pyvlx=self.pyvlx,
+                name="Fnord23",
+                node_id=23,
+                serial_number="aa:bb:aa:bb:aa:bb:aa:23",
+            ),
+        )
+
+    def test_exterior_heating(self) -> None:
+        """Test convert_frame_to_node with exterior heating."""
+        frame = FrameGetNodeInformationNotification()
+        frame.node_id = 23
+        frame.name = "Fnord23"
+        frame.node_type = NodeTypeWithSubtype.EXTERIOR_HEATING
+        frame.serial_number = "aa:bb:aa:bb:aa:bb:aa:23"
+        node = convert_frame_to_node(self.pyvlx, frame)
+        self.assertEqual(
+            node,
+            ExteriorHeating(
                 pyvlx=self.pyvlx,
                 name="Fnord23",
                 node_id=23,

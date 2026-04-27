@@ -1,6 +1,5 @@
 """Unit tests for FrameNodeStatePositionChangedNotification."""
 import unittest
-from datetime import datetime
 
 from pyvlx import Position
 from pyvlx.api.frame_creation import frame_from_raw
@@ -10,8 +9,6 @@ from pyvlx.const import OperatingState
 
 class TestFrameNodeStatePositionChangedNotification(unittest.TestCase):
     """Test class for FrameNodeStatePositionChangedNotification."""
-
-    # pylint: disable=too-many-public-methods,invalid-name
 
     EXAMPLE_FRAME = (
         b"\x00\x17\x02\x11\x05\x05\xc8\x00\xc8\x00\xf7\xff\xf7\xff"
@@ -51,13 +48,11 @@ class TestFrameNodeStatePositionChangedNotification(unittest.TestCase):
     def test_str(self) -> None:
         """Test string representation of FrameNodeStatePositionChangedNotification."""
         frame = frame_from_raw(self.EXAMPLE_FRAME)
-        test_ts = datetime.fromtimestamp(1288634368).strftime("%Y-%m-%d %H:%M:%S")
+        test_ts = f"0x{1288634368:02x}"
         self.assertEqual(
             str(frame),
-            '<FrameNodeStatePositionChangedNotification node_id="5" state="DONE" '
-            'current_position="100 %" target="100 %" current_position_fp1="UNKNOWN" '
-            'current_position_fp2="UNKNOWN" current_position_fp3="UNKNOWN" '
-            'current_position_fp4="UNKNOWN" remaining_time="0" time="{}"/>'.format(
-                test_ts
-            ),
+            f'<FrameNodeStatePositionChangedNotification node_id="5" state="DONE" '
+            f'current_position="100 %" target="100 %" current_position_fp1="UNKNOWN" '
+            f'current_position_fp2="UNKNOWN" current_position_fp3="UNKNOWN" '
+            f'current_position_fp4="UNKNOWN" remaining_time="0" time="{test_ts}"/>',
         )

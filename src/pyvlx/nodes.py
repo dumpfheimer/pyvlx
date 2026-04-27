@@ -1,0 +1,176 @@
+"""Module for storing nodes."""
+from typing import TYPE_CHECKING, Iterator, List, Optional, Union
+
+from .api import GetAllNodesInformation, GetNodeInformation
+from .exception import PyVLXException
+from .log import PYVLXLOG
+from .node import Node
+from .node_helper import convert_frame_to_node
+
+if TYPE_CHECKING:
+    from pyvlx import PyVLX
+
+
+class Nodes:
+    """Object for storing node objects."""
+
+    def __init__(self, pyvlx: "PyVLX"):
+        """Initialize Nodes object."""
+        self.pyvlx = pyvlx
+        self.__nodes: List[Node] = []
+
+    def __iter__(self) -> Iterator[Node]:
+        """Iterate."""
+        yield from self.__nodes
+
+    def __getitem__(self, key: Union[str, int]) -> Node:
+        """Return node by name or by index."""
+        if isinstance(key, int):
+            for node in self.__nodes:
+                if node.node_id == key:
+                    return node
+        for node in self.__nodes:
+            if node.name == key:
+                return node
+        raise KeyError
+
+    def __contains__(self, key: Union[str, int, Node]) -> bool:
+        """Check if key is in index."""
+        if isinstance(key, int):
+            for node in self.__nodes:
+                if node.node_id == key:
+                    return True
+        if isinstance(key, Node):
+            for node in self.__nodes:
+                if node == key:
+                    return True
+        for node in self.__nodes:
+            if node.name == key:
+                return True
+        return False
+
+    def __len__(self) -> int:
+        """Return number of nodes."""
+        return len(self.__nodes)
+
+    def add(self, node: Node) -> None:
+        """Add Node, replace existing node if node with node_id is present."""
+        if not isinstance(node, Node):
+            raise TypeError()
+        for i, j in enumerate(self.__nodes):
+            if j.node_id == node.node_id:
+                if j is node:
+                    PYVLXLOG.debug(
+                        "Node with node_id %s already present; skipping re-add",
+                        node.node_id,
+                    )
+                    return
+                j.dispose()
+                self.__nodes[i] = node
+                PYVLXLOG.debug("Replaced node with node_id %s", node.node_id)
+                return
+        self.__nodes.append(node)
+        PYVLXLOG.debug("Added node with node_id %s", node.node_id)
+
+    def clear(self) -> None:
+        """Clear internal node array."""
+        for node in self.__nodes:
+            node.dispose()
+        self.__nodes = []
+
+    @staticmethod
+    def _update_node_metadata(existing: Node, loaded: Node) -> None:
+        """Update metadata that should follow the latest gateway snapshot.
+
+        This should mostly update the name, I don't expect the node_id to change but
+        it doesn't hurt to update it as well (this would happen only for devices
+        with identical serial numbers).
+        We explicitly do not update runtime state because callbacks is something that
+        we want to preserve across reloads, and positions and frame history are
+        expected to be updated by the regular API event handling (heartbeat, house
+        monitoring), so they are either correct already or will be updated soon.
+        """
+        existing.node_id = loaded.node_id
+        existing.name = loaded.name
+
+    def _find_matching_existing(
+        self,
+        loaded: Node,
+        used_existing: List[Node],
+    ) -> Optional[Node]:
+        """Find existing node matching loaded node identity.
+
+        Already matched existing nodes are skipped.
+        """
+        for existing in self.__nodes:
+            # Avoid deep equality checks when determining if an existing node
+            # has already been used; compare by identity instead.
+            if any(existing is used for used in used_existing):
+                continue
+            if existing.represents_same_node(loaded):
+                return existing
+        return None
+
+    async def load(self, node_id: Optional[int] = None) -> None:
+        """Load nodes from KLF 200, if no node_id is specified all nodes are loaded."""
+        if node_id is not None:
+            await self._load_node(node_id=node_id)
+        else:
+            await self._load_all_nodes()
+
+    async def _load_node(self, node_id: int) -> None:
+        """Load single node via API."""
+        get_node_information = GetNodeInformation(pyvlx=self.pyvlx, node_id=node_id)
+        await get_node_information.do_api_call()
+        if not get_node_information.success:
+            raise PyVLXException("Unable to retrieve node information")
+        notification_frame = get_node_information.notification_frame
+        if notification_frame is None:
+            return
+        loaded = convert_frame_to_node(self.pyvlx, notification_frame)
+        if loaded is None:
+            return
+        existing = self._find_matching_existing(loaded, [])
+        if existing is not None:
+            self._update_node_metadata(existing, loaded)
+            loaded.dispose()
+        else:
+            self.add(loaded)
+
+    async def _load_all_nodes(self) -> None:
+        """Load and merge a full gateway node snapshot.
+
+        Matching existing nodes are kept and updated with current gateway metadata,
+        newly discovered nodes are added, and previously known nodes missing from
+        the snapshot are disposed and removed.
+        """
+        get_all_nodes_information = GetAllNodesInformation(pyvlx=self.pyvlx)
+        await get_all_nodes_information.do_api_call()
+        if not get_all_nodes_information.success:
+            raise PyVLXException("Unable to retrieve node information")
+
+        loaded_nodes: List[Node] = []
+        for notification_frame in get_all_nodes_information.notification_frames:
+            node = convert_frame_to_node(self.pyvlx, notification_frame)
+            if node is not None:
+                loaded_nodes.append(node)
+
+        next_nodes: List[Node] = []
+        used_existing: List[Node] = []
+
+        for loaded_node in loaded_nodes:
+            existing = self._find_matching_existing(loaded_node, used_existing)
+            if existing is None:
+                next_nodes.append(loaded_node)
+                continue
+
+            used_existing.append(existing)
+            self._update_node_metadata(existing, loaded_node)
+            loaded_node.dispose()
+            next_nodes.append(existing)
+
+        for existing in self.__nodes:
+            if existing not in used_existing:
+                existing.dispose()
+
+        self.__nodes = next_nodes

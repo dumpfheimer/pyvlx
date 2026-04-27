@@ -1,0 +1,829 @@
+"""Module for Opening devices."""
+import asyncio
+import datetime
+from asyncio import Task
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+from pyvlx.api.get_limitation import GetLimitation
+
+from .api.command_send import CommandSend
+from .api.set_limitation import SetLimitation
+from .const import (
+    LimitationTime, LimitationType, NodeParameter, Originator, Velocity)
+from .exception import PyVLXException
+from .node import Node
+from .parameter import (
+    CurrentPosition, DualRollerShutterPosition, FunctionalParams,
+    IgnorePosition, Parameter, Position, TargetPosition)
+
+if TYPE_CHECKING:
+    from pyvlx import PyVLX
+
+
+class OpeningDevice(Node):
+    """Meta class for opening device with one main parameter for position."""
+
+    DEFAULT_TIMEOUT: ClassVar[int] = 2
+
+    def __init__(
+        self,
+        pyvlx: "PyVLX",
+        node_id: int,
+        name: str,
+        serial_number: Optional[str] = None,
+        position_parameter: Parameter = Parameter(),
+    ):
+        """Initialize opening device.
+
+        Parameters:
+            * pyvlx: PyVLX object
+            * node_id: internal id for addressing nodes.
+                Provided by KLF 200 device
+            * name: node name
+            * serial_number: serial number of the node.
+            * position_parameter: initial position of the opening device.
+
+        """
+        super().__init__(
+            pyvlx=pyvlx, node_id=node_id, name=name, serial_number=serial_number
+        )
+        self.position: Position = Position(parameter=position_parameter)
+        self.target: Position = Position(parameter=position_parameter)
+        self.limitation_min: Position = IgnorePosition()
+        self.limitation_max: Position = IgnorePosition()
+        self.limitation_time: LimitationTime = LimitationTime.CLEAR_ALL
+        self.limitation_originator: Originator = Originator.USER
+
+        self.is_opening: bool = False
+        self.is_closing: bool = False
+        self.state_received_at: Optional[datetime.datetime] = None
+        self.estimated_completion: Optional[datetime.datetime] = None
+        self.use_default_velocity: bool = False
+        self.default_velocity: Velocity = Velocity.DEFAULT
+        self.open_position_target: int = 0
+        self.close_position_target: int = 100
+        self._update_task: Task | None = None
+
+    async def _update_calls(self) -> None:
+        """While cover are moving, perform periodically update calls."""
+        while self.is_moving():
+            await asyncio.sleep(1)
+            await self.after_update()
+        if self._update_task:
+            self._update_task.cancel()
+            self._update_task = None
+
+    async def set_position(
+        self,
+        position: Position,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        """Set opening device to desired position.
+
+        Parameters:
+            * position: Position object containing the target position.
+            * velocity: Velocity to be used during transition.
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value (e.g. 60 or
+                120) to actually wait for the motion to finish.
+
+        """
+        fp: FunctionalParams = {}
+
+        if (
+            velocity is None or velocity is Velocity.DEFAULT
+        ) and self.use_default_velocity:
+            velocity = self.default_velocity
+
+        if isinstance(velocity, Velocity):
+            if velocity is not Velocity.DEFAULT:
+                if velocity is Velocity.SILENT:
+                    fp[NodeParameter.FP1] = Parameter(raw=b"\x00\x00")
+                else:
+                    fp[NodeParameter.FP1] = Parameter(raw=b"\xC8\x00")
+        elif isinstance(velocity, int):
+            fp[NodeParameter.FP1] = Position(position_percent=velocity)
+
+        command = CommandSend(
+            pyvlx=self.pyvlx,
+            wait_for_completion=wait_for_completion,
+            node_id=self.node_id,
+            parameter=position,
+            functional_parameter=fp,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+        await command.send()
+
+    async def open(
+        self,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        """Open opening device.
+
+        Parameters:
+            * velocity: Velocity to be used during transition.
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value to actually
+                wait for the motion to finish.
+
+        """
+        await self.set_position(
+            position=Position(position_percent=self.open_position_target),
+            velocity=velocity,
+            wait_for_completion=wait_for_completion,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def close(
+        self,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = DEFAULT_TIMEOUT,
+    ) -> None:
+        """Close opening device.
+
+        Parameters:
+            * velocity: Velocity to be used during transition.
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value to actually
+                wait for the motion to finish.
+        """
+        await self.set_position(
+            position=Position(position_percent=self.close_position_target),
+            velocity=velocity,
+            wait_for_completion=wait_for_completion,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def stop(self, wait_for_completion: bool = True, timeout_in_seconds: int = DEFAULT_TIMEOUT) -> None:
+        """Stop opening device.
+
+        Parameters:
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, the wait will usually end
+                on the timeout rather than on the actual stop.
+
+        """
+        await self.set_position(
+            position=CurrentPosition(),
+            wait_for_completion=wait_for_completion,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def set_position_limitations(self,
+                                       position_min: Position = IgnorePosition(),
+                                       position_max: Position = IgnorePosition()) -> None:
+        """Set a minimum and maximum position limit.
+
+        Parameters:
+            * min_position: Position object containing the minimum position.
+            * max_position: Position object containing the maximum position.
+        """
+        command_set_limitation = SetLimitation(
+            pyvlx=self.pyvlx,
+            node_id=self.node_id,
+            limitation_value_min=position_min,
+            limitation_value_max=position_max
+        )
+        await command_set_limitation.do_api_call()
+        if not command_set_limitation.success:
+            raise PyVLXException("Unable to set limitations")
+        self.limitation_min = position_min
+        self.limitation_max = position_max
+        await self.after_update()
+
+    async def clear_position_limitations(self) -> None:
+        """Clear position limits."""
+        command_set_limitation = SetLimitation(
+            pyvlx=self.pyvlx,
+            node_id=self.node_id,
+            limitation_time=LimitationTime.CLEAR_ALL,
+        )
+        await command_set_limitation.do_api_call()
+        if not command_set_limitation.success:
+            raise PyVLXException("Unable to clear limitations")
+        self.limitation_min = IgnorePosition()
+        self.limitation_max = IgnorePosition()
+        await self.after_update()
+
+    async def get_limitation_min(self) -> Position:
+        """Request and return minimum limitation from gateway."""
+        command_get_limitation = GetLimitation(
+            pyvlx=self.pyvlx,
+            node_id=self.node_id,
+            limitation_type=LimitationType.MIN_LIMITATION
+        )
+        await command_get_limitation.do_api_call()
+        if not command_get_limitation.success:
+            raise PyVLXException("Unable to get minimum limitation")
+
+        self.limitation_min = Position(position_percent=command_get_limitation.min_value)
+
+        return self.limitation_min
+
+    async def get_limitation_max(self) -> Position:
+        """Request and return maximum limitation from gateway."""
+        command_get_limitation = GetLimitation(
+            pyvlx=self.pyvlx,
+            node_id=self.node_id,
+            limitation_type=LimitationType.MAX_LIMITATION
+        )
+        await command_get_limitation.do_api_call()
+        if not command_get_limitation.success:
+            raise PyVLXException("Unable to get maximum limitation")
+
+        self.limitation_max = Position(position_percent=command_get_limitation.max_value)
+
+        return self.limitation_max
+
+    def is_moving(self) -> bool:
+        """Return moving state of the cover."""
+        return self.is_opening or self.is_closing
+
+    def movement_percent(self) -> int:
+        """Return movement percentage of the cover."""
+        if (
+            self.estimated_completion is None
+            or self.state_received_at is None
+            or self.estimated_completion < datetime.datetime.now()
+        ):
+            return 100
+
+        movement_duration_s: float = (
+            self.estimated_completion - self.state_received_at
+        ).total_seconds()
+        time_passed_s: float = (
+            datetime.datetime.now() - self.state_received_at
+        ).total_seconds()
+
+        percent: int = int(time_passed_s / movement_duration_s * 100)
+        percent = max(percent, 0)
+        percent = min(percent, 100)
+        return percent
+
+    def get_position(self) -> Position:
+        """Return position of the cover."""
+        if self.is_moving():
+            percent = self.movement_percent()
+            movement_origin = self.position.position_percent
+            movement_target = self.target.position_percent
+            current_position = (
+                movement_origin + (movement_target - movement_origin) / 100 * percent
+            )
+            if not self._update_task:
+                self._update_task = asyncio.create_task(self._update_calls())
+            return Position(position_percent=int(current_position))
+        return self.position
+
+    def __str__(self) -> str:
+        """Return object as readable string."""
+        return (
+            f'<{type(self).__name__} name="{self.name}" node_id="{self.node_id}" '
+            f'serial_number="{self.serial_number}" position="{self.position}"/>'
+        )
+
+
+class Window(OpeningDevice):
+    """Window object."""
+
+    def __init__(
+        self,
+        pyvlx: "PyVLX",
+        node_id: int,
+        name: str,
+        serial_number: Optional[str],
+        position_parameter: Parameter = Parameter(),
+        rain_sensor: bool = False,
+    ):
+        """Initialize Window class.
+
+        Parameters:
+            * pyvlx: PyVLX object
+            * node_id: internal id for addressing nodes.
+                Provided by KLF 200 device
+            * name: node name
+            * serial_number: serial number of the node.
+            * position_parameter: initial position of the opening device.
+            * rain_sensor: set if device is equipped with a
+                rain sensor.
+
+        """
+        super().__init__(
+            pyvlx=pyvlx,
+            node_id=node_id,
+            name=name,
+            serial_number=serial_number,
+            position_parameter=position_parameter,
+        )
+        self.rain_sensor = rain_sensor
+
+    def __str__(self) -> str:
+        """Return object as readable string."""
+        return (
+            f'<{type(self).__name__} name="{self.name}" node_id="{self.node_id}" rain_sensor={self.rain_sensor} '
+            f'serial_number="{self.serial_number}" position="{self.position}"/>'
+        )
+
+
+class Blind(OpeningDevice):
+    """Blind objects."""
+
+    def __init__(
+        self,
+        pyvlx: "PyVLX",
+        node_id: int,
+        name: str,
+        serial_number: Optional[str],
+        position_parameter: Parameter = Parameter(),
+    ):
+        """Initialize Blind class.
+
+        Parameters:
+            * pyvlx: PyVLX object
+            * node_id: internal id for addressing nodes.
+                Provided by KLF 200 device
+            * name: node name
+
+        """
+        super().__init__(
+            pyvlx=pyvlx,
+            node_id=node_id,
+            name=name,
+            serial_number=serial_number,
+            position_parameter=position_parameter,
+        )
+        self.orientation: Position = Position(position_percent=0)
+        self.target_orientation: Position = TargetPosition()
+        self.target_position: Position = TargetPosition()
+        self.open_orientation_target: int = 50
+        self.close_orientation_target: int = 100
+
+    async def set_position_and_orientation(
+        self,
+        position: Position,
+        wait_for_completion: bool = True,
+        velocity: Velocity | int | None = None,
+        orientation: Optional[Position] = None,
+        timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT,
+    ) -> None:
+        """Set blind to desired position.
+
+        Parameters:
+            * position: Position object containing the current position.
+            * velocity: Velocity to be used during transition.
+            * target_position: Position object holding the target position
+                which allows to adjust the position while the blind is in movement
+                without stopping the blind (if orientation position has been changed.)
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * orientation: If set, the orientation of the device will be set in the same request.
+                Note, that, if the position is set to 0, the orientation will be set to 0 too.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value to actually
+                wait for the motion to finish.
+
+        """
+        self.target_position = position
+        fp: FunctionalParams = {}
+
+        if orientation is not None:
+            fp[NodeParameter.FP3] = orientation
+        elif self.target_position == Position(position_percent=0):
+            fp[NodeParameter.FP3] = Position(position_percent=0)
+        else:
+            fp[NodeParameter.FP3] = IgnorePosition()
+
+        if (
+            velocity is None or velocity is Velocity.DEFAULT
+        ) and self.use_default_velocity:
+            velocity = self.default_velocity
+
+        if isinstance(velocity, Velocity):
+            if velocity is not Velocity.DEFAULT:
+                if velocity is Velocity.SILENT:
+                    fp[NodeParameter.FP1] = Parameter(raw=b"\x00\x00")
+                else:
+                    fp[NodeParameter.FP1] = Parameter(raw=b"\xC8\x00")
+        elif isinstance(velocity, int):
+            fp[NodeParameter.FP1] = Position(position_percent=velocity)
+
+        command = CommandSend(
+            pyvlx=self.pyvlx,
+            node_id=self.node_id,
+            parameter=position,
+            wait_for_completion=wait_for_completion,
+            functional_parameter=fp,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+        await command.send()
+        await self.after_update()
+
+    async def set_position(
+        self,
+        position: Position,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT,
+    ) -> None:
+        """Set blind to desired position.
+
+        Parameters:
+            * position: Position object containing the current position.
+            * velocity: Velocity to be used during transition.
+            * target_position: Position object holding the target position
+                which allows to adjust the position while the blind is in movement
+                without stopping the blind (if orientation position has been changed.)
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value to actually
+                wait for the motion to finish.
+        """
+        await self.set_position_and_orientation(
+            position=position,
+            wait_for_completion=wait_for_completion,
+            velocity=velocity,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def open(
+        self,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT,
+    ) -> None:
+        """Open blind.
+
+        Parameters:
+            * velocity: Velocity to be used during transition.
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value to actually
+                wait for the motion to finish.
+        """
+        await self.set_position(
+            position=Position(position_percent=self.open_position_target),
+            velocity=velocity,
+            wait_for_completion=wait_for_completion,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def close(
+        self,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT,
+    ) -> None:
+        """Close blind.
+
+        Parameters:
+            * velocity: Velocity to be used during transition.
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value to actually
+                wait for the motion to finish.
+        """
+        await self.set_position(
+            position=Position(position_percent=self.close_position_target),
+            velocity=velocity,
+            wait_for_completion=wait_for_completion,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def stop(self, wait_for_completion: bool = True, timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT) -> None:
+        """Stop Blind position.
+
+        Parameters:
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, the wait will usually end
+                on the timeout rather than on the actual stop.
+        """
+        await self.set_position_and_orientation(
+            position=CurrentPosition(),
+            wait_for_completion=wait_for_completion,
+            orientation=self.target_orientation,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def set_orientation(
+        self,
+        orientation: Position,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT,
+    ) -> None:
+        """Set Blind shades to desired orientation.
+
+        Parameters:
+            * orientation: Position object containing the target orientation.
+            * target_orientation: Position object holding the target orientation
+                which allows to adjust the orientation while the blind is in movement
+                without stopping the blind (if the position has been changed.)
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, the wait will usually end
+                on the timeout rather than on the actual orientation change.
+
+        """
+        self.target_orientation = orientation
+        self.orientation = orientation
+
+        fp: FunctionalParams = {NodeParameter.FP3:
+                                Position(position_percent=0)
+                                if self.target_position == Position(position_percent=0)
+                                else self.target_orientation}
+
+        command = CommandSend(
+            pyvlx=self.pyvlx,
+            wait_for_completion=wait_for_completion,
+            node_id=self.node_id,
+            parameter=self.target_position,
+            functional_parameter=fp,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+        await command.send()
+        await self.after_update()
+        # KLF200 always send UNKNOWN position for functional parameter,
+        # so orientation is set directly and not via GW_NODE_STATE_POSITION_CHANGED_NTF
+
+    async def open_orientation(self, wait_for_completion: bool = True, timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT) -> None:
+        """Open Blind slats orientation.
+
+        Blind slats with ±90° orientation are open at 50%
+        """
+        await self.set_orientation(
+            orientation=Position(position_percent=self.open_orientation_target),
+            wait_for_completion=wait_for_completion,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def close_orientation(self, wait_for_completion: bool = True, timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT) -> None:
+        """Close Blind slats."""
+        await self.set_orientation(
+            orientation=Position(position_percent=self.close_orientation_target),
+            wait_for_completion=wait_for_completion,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def stop_orientation(self, wait_for_completion: bool = True, timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT) -> None:
+        """Stop Blind slats."""
+        await self.set_orientation(
+            orientation=CurrentPosition(),
+            wait_for_completion=wait_for_completion,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+
+class Awning(OpeningDevice):
+    """Awning objects."""
+
+
+class DualRollerShutter(OpeningDevice):
+    """DualRollerShutter object."""
+
+    def __init__(
+        self,
+        pyvlx: "PyVLX",
+        node_id: int,
+        name: str,
+        serial_number: Optional[str],
+        position_parameter: Parameter = Parameter(),
+    ):
+        """Initialize DualRollerShutter class.
+
+        Parameters:
+            * pyvlx: PyVLX object
+            * node_id: internal id for addressing nodes.
+                Provided by KLF 200 device
+            * name: node name
+
+        """
+        super().__init__(
+            pyvlx=pyvlx,
+            node_id=node_id,
+            name=name,
+            serial_number=serial_number,
+            position_parameter=position_parameter,
+        )
+        self.position_upper_curtain: Position = Position(position_percent=0)
+        self.position_lower_curtain: Position = Position(position_percent=0)
+        self.target_position: Any = Position()
+        self.active_parameter: int = 0
+
+    async def set_position(
+        self,
+        position: Position,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT,
+        *,
+        curtain: str = "dual",
+    ) -> None:
+        """Set DualRollerShutter to desired position.
+
+        Parameters:
+            * position: Position object containing the current position.
+            * target_position: Position object holding the target position
+                which allows to adjust the position while the blind is in movement
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value to actually
+                wait for the motion to finish.
+        """
+        fp: FunctionalParams = {}
+
+        if curtain == "upper":
+            self.target_position = DualRollerShutterPosition()
+            self.active_parameter = 1
+            fp[NodeParameter.FP1] = position
+            fp[NodeParameter.FP2] = TargetPosition()
+        elif curtain == "lower":
+            self.target_position = DualRollerShutterPosition()
+            self.active_parameter = 2
+            fp[NodeParameter.FP1] = TargetPosition()
+            fp[NodeParameter.FP2] = position
+        else:
+            self.target_position = position
+            self.active_parameter = 0
+
+        if (
+            velocity is None or velocity is Velocity.DEFAULT
+        ) and self.use_default_velocity:
+            velocity = self.default_velocity
+
+        if isinstance(velocity, Velocity):
+            if velocity is not Velocity.DEFAULT:
+                if velocity is Velocity.SILENT:
+                    fp[NodeParameter.FP3] = Parameter(raw=b"\x00\x00")
+                else:
+                    fp[NodeParameter.FP3] = Parameter(raw=b"\xC8\x00")
+        elif isinstance(velocity, int):
+            fp[NodeParameter.FP3] = Position(position_percent=velocity)
+
+        command = CommandSend(
+            pyvlx=self.pyvlx,
+            wait_for_completion=wait_for_completion,
+            node_id=self.node_id,
+            parameter=self.target_position,
+            active_parameter=self.active_parameter,
+            functional_parameter=fp,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+        await command.send()
+        if position.position <= Position.MAX:
+            if curtain == "upper":
+                self.position_upper_curtain = position
+            elif curtain == "lower":
+                self.position_lower_curtain = position
+            else:
+                self.position = position
+        await self.after_update()
+
+    async def open(
+        self,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT,
+        *,
+        curtain: str = "dual",
+    ) -> None:
+        """Open DualRollerShutter.
+
+        Parameters:
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value to actually
+                wait for the motion to finish.
+        """
+        await self.set_position(
+            position=Position(position_percent=self.open_position_target),
+            velocity=velocity,
+            wait_for_completion=wait_for_completion,
+            curtain=curtain,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def close(
+        self,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT,
+        *,
+        curtain: str = "dual",
+    ) -> None:
+        """Close DualRollerShutter.
+
+        Parameters:
+            * wait_for_completion: If True, also wait for the gateway's
+                session-finished notification after the command is
+                accepted; bounded by ``timeout_in_seconds``. The timeout
+                ends the wait only, it does not interrupt the motion.
+            * timeout_in_seconds: Maximum wait time in seconds. Note: the
+                default is short enough that, with
+                ``wait_for_completion=True``, most real devices will not
+                be awaited to completion; pass a larger value to actually
+                wait for the motion to finish.
+        """
+        await self.set_position(
+            position=Position(position_percent=self.close_position_target),
+            velocity=velocity,
+            wait_for_completion=wait_for_completion,
+            curtain=curtain,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+    async def stop(
+        self,
+        wait_for_completion: bool = True,
+        timeout_in_seconds: int = OpeningDevice.DEFAULT_TIMEOUT,
+        *,
+        velocity: Velocity | int | None = Velocity.DEFAULT,
+        curtain: str = "dual",
+    ) -> None:
+        """Stop DualRollerShutter position."""
+        await self.set_position(
+            position=CurrentPosition(),
+            velocity=velocity,
+            wait_for_completion=wait_for_completion,
+            curtain=curtain,
+            timeout_in_seconds=timeout_in_seconds,
+        )
+
+
+class RollerShutter(OpeningDevice):
+    """RollerShutter object."""
+
+
+class GarageDoor(OpeningDevice):
+    """GarageDoor object."""
+
+
+class Gate(OpeningDevice):
+    """Gate object."""
+
+
+class Blade(OpeningDevice):
+    """Blade object."""
